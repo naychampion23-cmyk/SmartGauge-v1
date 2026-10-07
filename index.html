@@ -104,31 +104,15 @@ body{overflow-x:hidden}
 </style>
 
 
-<style>
-#sgSideDrawer{position:fixed;top:0;right:0;width:280px;max-width:82vw;height:100vh;background:#0b111a;border-left:1px solid #263142;box-shadow:-12px 0 30px rgba(0,0,0,.35);z-index:9999;transform:translateX(105%);transition:transform .22s ease;padding:18px;box-sizing:border-box}
-#sgSideDrawer.open{transform:translateX(0)}
-#sgSideDrawer .sgSideHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;color:#dfe9f8;font-weight:700}
-#sgSideDrawer button{width:100%;border:1px solid #263142;background:#101722;color:#dfe9f8;border-radius:10px;padding:13px 12px;margin:6px 0;text-align:left;font-size:14px;cursor:pointer}
-#sgSideDrawer button:hover{border-color:#35d9ff;background:#13202d}
-#sgSideClose{width:auto!important;padding:7px 10px!important;margin:0!important}
-#sgSideToggle{position:fixed;right:14px;top:14px;z-index:9998;border:1px solid #263142;background:#101722;color:#dfe9f8;border-radius:10px;padding:9px 12px;font-size:18px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25)}
-#sgSideOverlay{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:9997;display:none}
-#sgSideOverlay.show{display:block}
+<style id="sg-live-fast-style">
+/* Keep live telemetry responsive without changing the UI design. */
+.sg-live-fast, #rpm-value, #tps-value, #afr-value, #inj-value, #igt-value, #ect-value, #bat-value {
+  transition: none !important;
+}
 </style>
 
-<link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#0b0f14">
 </head>
 <body>
-
-<div id="sgSideOverlay"></div>
-<button id="sgSideToggle" aria-label="เมนูเพิ่มเติม">☰</button>
-<aside id="sgSideDrawer" aria-label="เมนูเพิ่มเติม">
-  <div class="sgSideHead"><span>เมนูเพิ่มเติม</span><button id="sgSideClose" aria-label="ปิด">✕</button></div>
-  <button data-side-target="monitorPage">🧠 ระบบ / สถานะ</button>
-  <button data-side-target="imagePage">🖼️ เปลี่ยนภาพหน้าจอ</button>
-</aside>
-
 <div class="wrap app">
 
   <div class="top">
@@ -173,7 +157,18 @@ body{overflow-x:hidden}
         <div class="menuName">ตั้งค่า</div>
         <div class="menuDesc">ตั้งค่าการแสดงผลและการทำงานของระบบ</div>
       </div>
-
+      <div class="menuCard" data-go="monitorPage">
+        <div class="menuNo">06</div>
+        <div class="menuIcon">🧠</div>
+        <div class="menuName">ระบบ / สถานะ</div>
+        <div class="menuDesc">ดูสถานะ Bluetooth, ECU, แพ็กเก็ต และการเชื่อมต่อ</div>
+      </div>
+      <div class="menuCard" data-go="imagePage">
+        <div class="menuNo">07</div>
+        <div class="menuIcon">🖼️</div>
+        <div class="menuName">เปลี่ยนภาพหน้าจอ</div>
+        <div class="menuDesc">เลือกรูปจากเครื่อง ส่งเข้า SmartGauge และแสดงบนจอ 320×240</div>
+      </div>
     </div>
   </div>
 
@@ -384,65 +379,22 @@ let dev=null, chr=null, packets=0, started=performance.now(), samples=[];
 const $=id=>document.getElementById(id);
 function setStatus(on){$('dot').classList.toggle('on',on);$('status').textContent=on?'เชื่อมต่อแล้ว':'ไม่ได้เชื่อมต่อ'}
 function val(id,v,d=1){$(id).textContent=Number.isFinite(+v)?(+v).toFixed(d):'--'}
-function render(d){
+function __SG_ORIGINAL_RENDER(d){
   const rpm=+d.rpm||0; val('rpm',Math.round(rpm),0); val('tps',d.tps); val('afr',d.afr,2); val('inj',d.inj); val('igt',d.igt); val('ect',d.ect,0); val('bat',d.bat,2);
   $('rpmBar').style.width=Math.min(100,rpm/10000*100)+'%'; packets++; $('packets').textContent=packets;
   samples.push({t:Date.now(),rpm,tps:+d.tps||0,afr:+d.afr||0,inj:+d.inj||0,igt:+d.igt||0,ect:+d.ect||0,bat:+d.bat||0});
   if(samples.length>240) samples.shift(); draw();
 }
-async function setupBluetoothDevice(device){
-  if(!device) return false;
-  try{
-    dev=device;
-    if(!dev.gatt) throw new Error('อุปกรณ์ไม่รองรับ GATT');
-    if(!dev.gatt.connected) await dev.gatt.connect();
-    const service=await dev.gatt.getPrimaryService(SERVICE);
-    chr=await service.getCharacteristic(TX);
-    try{ await chr.stopNotifications(); }catch(_){}
-    await chr.startNotifications();
-    chr.oncharacteristicvaluechanged=e=>{
-      try{render(JSON.parse(new TextDecoder().decode(e.target.value)))}catch(_){}
-    };
-    if(!dev.__sgDisconnectBound){
-      dev.addEventListener('gattserverdisconnected',()=>{
-        setStatus(false);
-        // ไม่ถือว่าเว็บพังเมื่อปิด/เปิดหน้าใหม่ — หน้าใหม่จะพยายามเชื่อมต่อให้อัตโนมัติ
-      });
-      dev.__sgDisconnectBound=true;
-    }
-    setStatus(true);
-    return true;
-  }catch(e){
-    console.log('Bluetooth reconnect:',e);
-    setStatus(false);
-    return false;
-  }
-}
-
 async function connect(){
  try{
   if(!navigator.bluetooth){alert('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');return}
-  const picked=await navigator.bluetooth.requestDevice({filters:[{name:'Honda SmartGauge'}],optionalServices:[SERVICE]});
-  await setupBluetoothDevice(picked);
+  dev=await navigator.bluetooth.requestDevice({filters:[{name:'Honda SmartGauge'}],optionalServices:[SERVICE]});
+  const g=await dev.gatt.connect(), s=await g.getPrimaryService(SERVICE);
+  chr=await s.getCharacteristic(TX); await chr.startNotifications();
+  chr.addEventListener('characteristicvaluechanged',e=>{try{render(JSON.parse(new TextDecoder().decode(e.target.value)))}catch(_){}})
+  dev.addEventListener('gattserverdisconnected',()=>setStatus(false)); setStatus(true);
  }catch(e){console.log(e);setStatus(false)}
 }
-
-// เมื่อเปิดไฟล์เว็บใหม่ ให้ใช้สิทธิ์ Bluetooth เดิมและเชื่อมต่อกลับให้อัตโนมัติ
-async function autoReconnect(){
-  if(!navigator.bluetooth || !navigator.bluetooth.getDevices) return;
-  try{
-    const devices=await navigator.bluetooth.getDevices();
-    const saved=devices.find(d=>d.name==='Honda SmartGauge');
-    if(saved) await setupBluetoothDevice(saved);
-  }catch(e){
-    console.log('Auto reconnect:',e);
-  }
-}
-
-window.addEventListener('pageshow',()=>{setTimeout(autoReconnect,150);});
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible') setTimeout(autoReconnect,150);
-});
 
 $('clear').onclick=()=>{samples=[];draw();packets=0;$('packets').textContent='0'};
 $('save').onclick=()=>{
@@ -468,14 +420,14 @@ function draw(){
 }
 window.addEventListener('resize',draw);draw();
 
-const rpms=[800,1100,1200,1300,1400,1500,1600,1800,2000,2250,2500,2750,3000,3250,3500,3750,4000,4250,4500,5000,5500,6000,6500,7000,7500,8000,8500,9000,9300];const tps=[0.0,0.4,0.8,1.2,1.8,2.4,3.2,4.4,5.7,7.4,9.2,11,13,15,18,22,26,30,34.9,40,45,50,54.9,65,72.5];
+const rpms=[];for(let r=1000;r<=10000;r+=500)rpms.push(r);const tps=[0,5,10,20,30,40,50,60,70,80,90,100];
 const cells={};function key(r,t){return r+'_'+t}
 function buildMap(){
  let z='<thead><tr><th>RPM \\ TPS</th>'+tps.map(t=>'<th>'+t+'%</th>').join('')+'</tr></thead><tbody>';
  rpms.forEach(r=>{z+='<tr><th>'+r+'</th>'+tps.map(t=>'<td id="c_'+r+'_'+t+'">--</td>').join('')+'</tr>'});$('tbl').innerHTML=z+'</tbody>';
 }
 buildMap();
-function updateMap(d){let rv=+d.rpm||0,tv=+d.tps||0;if(rv<=0)return;let r=rpms.reduce((a,b)=>Math.abs(b-rv)<Math.abs(a-rv)?b:a),t=tps.reduce((a,b)=>Math.abs(b-tv)<Math.abs(a-tv)?b:a);let k=key(r,t);if(!cells[k])cells[k]=[];cells[k].push(+d.afr||0);if(cells[k].length>100)cells[k].shift();let a=cells[k].reduce((x,y)=>x+y,0)/cells[k].length,c=$('c_'+k);if(c){c.textContent=a.toFixed(2);c.className=a<12?'hot':a>15?'mid':'good'}}
+function updateMap(d){let r=Math.round((+d.rpm||0)/500)*500,t=tps.reduce((a,b)=>Math.abs(b-(+d.tps||0))<Math.abs(a-(+d.tps||0))?b:a);if(r<1000||r>10000)return;let k=key(r,t);if(!cells[k])cells[k]=[];cells[k].push(+d.afr||0);if(cells[k].length>100)cells[k].shift();let a=cells[k].reduce((x,y)=>x+y,0)/cells[k].length,c=$('c_'+k);if(c){c.textContent=a.toFixed(2);c.className=a<12?'hot':a>15?'mid':'good'}}
 const oldRender=render; render=function(d){oldRender(d);updateMap(d)};
 $('liveTab').onclick=()=>{$('live').style.display='grid';$('map').style.display='none';$('liveTab').classList.add('active');$('mapTab').classList.remove('active')};
 $('mapTab').onclick=()=>{$('live').style.display='none';$('map').style.display='block';$('mapTab').classList.add('active');$('liveTab').classList.remove('active')};
@@ -880,28 +832,44 @@ window.sendEditedRGB565 = async function(rgb, progressCb, statusCb){
 
 
 <script>
-(function(){
-  const drawer=document.getElementById('sgSideDrawer');
-  const overlay=document.getElementById('sgSideOverlay');
-  const toggle=document.getElementById('sgSideToggle');
-  const close=document.getElementById('sgSideClose');
-  function openSide(){drawer.classList.add('open');overlay.classList.add('show')}
-  function closeSide(){drawer.classList.remove('open');overlay.classList.remove('show')}
-  toggle.addEventListener('click',openSide);
-  close.addEventListener('click',closeSide);
-  overlay.addEventListener('click',closeSide);
-  document.querySelectorAll('[data-side-target]').forEach(b=>b.addEventListener('click',()=>{
-    const id=b.dataset.sideTarget;
-    if(typeof showScreen==='function') showScreen(id);
-    closeSide();
-  }));
+/* SmartGauge LIVE DISPLAY OPTIMIZER
+   BLE packets are buffered immediately; the visible values are rendered
+   on the browser's animation frame instead of doing heavy work per packet.
+*/
+(function () {
+  const latest = { data: null, dirty: false };
+  let framePending = false;
+  const originalRAF = window.requestAnimationFrame.bind(window);
+
+  window.__SG_LIVE_LATEST = latest;
+
+  window.__SG_SCHEDULE_LIVE_RENDER = function (fn) {
+    latest.dirty = true;
+    if (framePending) return;
+    framePending = true;
+    originalRAF(function () {
+      framePending = false;
+      if (!latest.dirty) return;
+      latest.dirty = false;
+      fn();
+    });
+  };
 })();
 </script>
 
+
 <script>
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-}
+(function () {
+  window.__SG_ORIGINAL_RENDER = __SG_ORIGINAL_RENDER;
+  window.render = function (data) {
+    window.__SG_LIVE_LATEST.data = data;
+    window.__SG_SCHEDULE_LIVE_RENDER(function () {
+      const d = window.__SG_LIVE_LATEST.data;
+      if (d != null) window.__SG_ORIGINAL_RENDER(d);
+    });
+  };
+})();
 </script>
+
 </body>
 </html>
